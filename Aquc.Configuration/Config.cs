@@ -1,4 +1,5 @@
 ﻿using Aquc.Configuration.Abstractions;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,12 +29,12 @@ public class ConfigurationBuilder<T> where T:IConfigurationStruct
         filePath = fileName;
         if (File.Exists(fileName))
         {
-            var file = new FileStream(fileName, FileMode.Open, FileAccess.Read);
-            currentValue = await JsonSerializer.DeserializeAsync<T>(file);
+            using var file = new FileStream(fileName, FileMode.Open, FileAccess.Read);
+            currentValue = await System.Text.Json.JsonSerializer.DeserializeAsync<T>(file);
         }
         else
         {
-            var file = new FileStream(fileName, FileMode.Create, FileAccess.ReadWrite);
+            using var file = new FileStream(fileName, FileMode.Create, FileAccess.ReadWrite);
             await WriteDefaultValue(file);
             currentValue = defaultValue;
         }
@@ -43,7 +44,7 @@ public class ConfigurationBuilder<T> where T:IConfigurationStruct
     {
         if (defaultValue == null)
             throw new NullReferenceException("Should call SetDefault() first when the configuration file is not existed.");
-        await JsonSerializer.SerializeAsync(file, defaultValue);
+        await System.Text.Json.JsonSerializer.SerializeAsync(file, defaultValue);
     }
     public virtual ConfigurationBuilder<T> SetDefault(Func<T> func) 
     {
@@ -55,7 +56,7 @@ public class ConfigurationBuilder<T> where T:IConfigurationStruct
         this.defaultValue = defaultValue;
         return this;
     }
-    public virtual IConfigurationSource<T> Build()
+    public virtual ConfigurationDefaultSource<T> BuildDefault()
     {
         if (filePath == null)
             throw new NullReferenceException("Should call BindJson() first.");
@@ -71,15 +72,20 @@ public class ConfigurationDefaultSource<T> : IConfigurationSource<T> where T:ICo
     public ConfigurationDefaultSource(string filePath, T data) => (Data, this.filePath) = (data, filePath);
     public T Data { get; set; }
 
-    public async Task SaveAsync()
+    public void Save()
     {
-        using var file = new FileStream(filePath, FileMode.Open, FileAccess.Write);
-        await JsonSerializer.SerializeAsync(file, Data);
+        using var file = new FileStream(filePath, FileMode.Truncate, FileAccess.Write);
+        using var writer = new StreamWriter(file);
+        writer.Write(JsonConvert.SerializeObject(Data,Formatting.Indented));
+        //JsonSerializer.Serialize(file, Data,new JsonSerializerOptions
+        //{
+        //    ReferenceHandler=ReferenceHandler.IgnoreCycles
+        //});
     }
 
     public IConfigurationFlow<T> GetFlow()
     {
-        throw new NotImplementedException();
+        return new ConfigurationDefaultFlow<T>(this);
     }
 }
 public class ConfigurationDefaultFlow<T> : IConfigurationFlow<T> where T : IConfigurationStruct
@@ -96,6 +102,6 @@ public class ConfigurationDefaultFlow<T> : IConfigurationFlow<T> where T : IConf
 
     public void Save()
     {
-        Source.SaveAsync();
+        Source.Save();
     }
 }

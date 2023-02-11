@@ -2,7 +2,7 @@
 
 public interface IConfigurationStruct
 {
-    public IConfigurationManifest ConfigurationManifest { get; set; }
+    //public IConfigurationManifest ConfigurationManifest { get; set; }
 }
 public interface IConfigurationManifest
 {
@@ -18,5 +18,5 @@ public interface IConfigurationSource<T> where T : IConfigurationStruct
 {
     public IConfigurationFlow<T> GetFlow();
     public T Data { get; set; }
-    public Task SaveAsync();
+    public void Save();
 }
