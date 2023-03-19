@@ -1,4 +1,5 @@
 ﻿using Aquc.Configuration.Abstractions;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -7,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using JsonConverter = Newtonsoft.Json.JsonConverter;
 
 namespace Aquc.Configuration;
 
@@ -17,27 +19,39 @@ public class ConfigurationDefaultManifest : IConfigurationManifest
 }
 public class ConfigurationBuilder<T> where T:IConfigurationStruct
 {
+    private readonly ILogger<ConfigurationBuilder<T>> _logger;
+
     public string? filePath;
     public T? defaultValue;
     public T? currentValue;
+    public JsonConverter? converter;
 
-    private ConfigurationBuilder() { }
+    public ConfigurationBuilder(ILogger<ConfigurationBuilder<T>> logger)
+    {
+        _logger = logger;
+    }
 
-    public static ConfigurationBuilder<T> Create() =>new ();
+    public static ConfigurationBuilder<T> Create(ILogger<ConfigurationBuilder<T>> logger) =>new (logger);
     public virtual async Task<ConfigurationBuilder<T>> BindJsonAsync(string fileName)
     {
         filePath = fileName;
         if (File.Exists(fileName))
         {
             using var file = new FileStream(fileName, FileMode.Open, FileAccess.Read);
-            currentValue = await System.Text.Json.JsonSerializer.DeserializeAsync<T>(file);
+            currentValue = JsonConvert.DeserializeObject<T>(await new StreamReader(file).ReadToEndAsync());
         }
         else
         {
             using var file = new FileStream(fileName, FileMode.Create, FileAccess.ReadWrite);
             await WriteDefaultValue(file);
             currentValue = defaultValue;
+            _logger.LogWarning("File is not existed, create a new file.");
         }
+        return this;
+    }
+    public virtual ConfigurationBuilder<T> SetJsonConverter(JsonConverter jsonConverter) 
+    { 
+        converter = jsonConverter;
         return this;
     }
     protected virtual async Task WriteDefaultValue(FileStream file)
@@ -62,25 +76,23 @@ public class ConfigurationBuilder<T> where T:IConfigurationStruct
             throw new NullReferenceException("Should call BindJson() first.");
         if (currentValue == null)
             throw new NullReferenceException("Should call BindJson() first.");
-        return new ConfigurationDefaultSource<T>(filePath, currentValue);
+        return new ConfigurationDefaultSource<T>(filePath, currentValue,converter);
     }
 }
 
 public class ConfigurationDefaultSource<T> : IConfigurationSource<T> where T:IConfigurationStruct
 {
     protected string filePath;
-    public ConfigurationDefaultSource(string filePath, T data) => (Data, this.filePath) = (data, filePath);
+    public ConfigurationDefaultSource(string filePath, T data, JsonConverter? converter) => 
+        (Data, this.filePath,this.converter) = (data, filePath,converter);
     public T Data { get; set; }
+    public JsonConverter? converter;
 
     public void Save()
     {
         using var file = new FileStream(filePath, FileMode.Truncate, FileAccess.Write);
         using var writer = new StreamWriter(file);
         writer.Write(JsonConvert.SerializeObject(Data,Formatting.Indented));
-        //JsonSerializer.Serialize(file, Data,new JsonSerializerOptions
-        //{
-        //    ReferenceHandler=ReferenceHandler.IgnoreCycles
-        //});
     }
 
     public IConfigurationFlow<T> GetFlow()
